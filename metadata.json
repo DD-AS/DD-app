@@ -1,0 +1,6 @@
+{
+  "name": "現場のミカタ：若手技術者応援タイピング＆クイズ",
+  "description": "現場で飛び交う専門用語や土木施工管理技士の重要用語を楽しく学べる、若手技術者のための学習アプリ。タイピングとクイズで基礎力を磨こう！",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
