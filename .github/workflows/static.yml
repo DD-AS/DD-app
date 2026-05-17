@@ -27,10 +27,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          # エラー回避のため cache: 'npm' を削除しました
 
       - name: Install dependencies
-        run: npm install  # ← ここを「npm ci」から「npm install」に変更しました！
+        run: npm install
 
       - name: Build
         run: npm run build
