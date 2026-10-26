@@ -1,0 +1,86 @@
+name: DD public site health
+
+on:
+  schedule:
+    # GitHub Actions uses UTC. 00:17 UTC = 09:17 JST.
+    - cron: '17 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check public pages and TLS
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from urllib.parse import urlparse
+
+          targets = [
+              ('DD AI Studio', 'https://dd-ai-studio.com/'),
+              ('一分の勇気', 'https://ippun-no-yuki-dd.ai.studio/'),
+              ('ClaimCompass', 'https://claim-compass-906703836124.asia-northeast1.run.app/'),
+              ('AI South', 'https://ai-272881834503.asia-south1.run.app/'),
+              ('Global Pulse', 'https://globalpulse-906703836124.us-west1.run.app/'),
+              ('AI West 1', 'https://ai-906703836124.us-west1.run.app/'),
+              ('AI West 2', 'https://ai-985995583428.us-west1.run.app/'),
+              ('錦鯉AI', 'https://nishikigoi-ai-strategist-718979784304.us-west1.run.app/'),
+              ('If Today Was Niigata', 'https://if-today-was-niigata-906703836124.us-west1.run.app/'),
+              ('Service', 'https://service-906703836124.us-west1.run.app/'),
+              ('Niigata Snow Scout', 'https://niigata-snow-scout-906703836124.us-west1.run.app/'),
+          ]
+
+          def check(url):
+              request = urllib.request.Request(url, headers={'User-Agent': 'DD-Site-Health/1.0'})
+              started = time.monotonic()
+              try:
+                  # urllib uses the system trust store and verifies HTTPS certificates.
+                  with urllib.request.urlopen(request, timeout=15) as response:
+                      response.read(512)
+                      return response.status, response.geturl(), '', time.monotonic() - started
+              except urllib.error.HTTPError as error:
+                  return error.code, error.geturl(), f'HTTP {error.code}', time.monotonic() - started
+              except Exception as error:
+                  return None, url, f'{type(error).__name__}: {error}', time.monotonic() - started
+
+          rows = []
+          failed = False
+          for name, url in targets:
+              result = check(url)
+              if result[0] is None or result[0] >= 400:
+                  time.sleep(2)
+                  result = check(url)
+              status, final_url, error, seconds = result
+              source_host = urlparse(url).hostname
+              final_host = urlparse(final_url).hostname
+              redirected = final_host != source_host
+              bad = status is None or status >= 400 or redirected
+              failed |= bad
+              label = '要確認' if bad else '正常'
+              detail = error or ('転送先のホストが変化' if redirected else '')
+              print(f'{label}: {name}: HTTP {status or "未取得"}; {final_url}; {detail}', flush=True)
+              rows.append((name, label, status or '未取得', final_url, detail, f'{seconds:.1f}'))
+
+          summary = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary:
+              with open(summary, 'a', encoding='utf-8') as report:
+                  report.write('## 公開サイト点検\n\n')
+                  report.write('HTTPSの証明書を検証したGETです。異常候補は1回だけ再試行します。\n\n')
+                  report.write('| サイト | 判定 | HTTP | 最終URL | 詳細 | 秒 |\n')
+                  report.write('|---|---|---:|---|---|---:|\n')
+                  for name, label, status, final_url, detail, seconds in rows:
+                      safe = lambda value: str(value).replace('|', '\\|').replace('\n', ' ')
+                      report.write(f'| {safe(name)} | {label} | {status} | {safe(final_url)} | {safe(detail)} | {seconds} |\n')
+
+          if failed:
+              raise SystemExit('1件以上の公開サイトで異常候補があります。ジョブ概要を確認してください。')
+          PY
+
